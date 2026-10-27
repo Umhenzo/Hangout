@@ -22,12 +22,12 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 
-private val FbBg = Color(0xFF10121D)
-private val FbPanel = Color(0xFF1A1D2B)
-private val FbAccent = Color(0xFF8B7CFF)
-private val FbMint = Color(0xFF62E6BD)
-private val FbText = Color(0xFFF4F3FF)
-private val FbMuted = Color(0xFF969BB5)
+private val FbBg = Color(0xFF171717)
+private val FbPanel = Color(0xFF242424)
+private val FbAccent = Color(0xFFC6C6C6)
+private val FbMint = Color(0xFFB8B8B8)
+private val FbText = Color(0xFFF5F5F5)
+private val FbMuted = Color(0xFFA5A5A5)
 
 @Composable
 fun FirebaseGate(content: @Composable () -> Unit) {
@@ -141,14 +141,14 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
             onDispose { }
         } else {
             val registration = db.collection("globalMessages")
-                .orderBy("createdAt", Query.Direction.ASCENDING)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(100)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         feedback = "Não foi possível carregar mensagens. Verifique as regras do Firestore."
                     } else if (snapshot != null) {
                         messages.clear()
-                        snapshot.documents.forEach { doc ->
+                        snapshot.documents.reversed().forEach { doc ->
                             val text = doc.getString("text") ?: return@forEach
                             val uid = doc.getString("uid") ?: ""
                             val email = doc.getString("email") ?: "usuário"
