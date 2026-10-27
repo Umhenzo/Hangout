@@ -1,17 +1,26 @@
 # Hangout
 
-Protótipo Android nativo em Kotlin + Jetpack Compose, com tema escuro e interface de mensageiro.
+App Android de conversas criado com Kotlin e Jetpack Compose.
 
-## Funcionalidades demonstrativas
-- Abas Chats, Global, Salas e Perfil
-- Perfis fictícios com username, país, status e atividade
-- Pesquisa e formulário de adicionar username
-- Mensagens locais de demonstração
-- Tela de salas de voz e botões de chamada
-- Perfil com status e país editáveis
+## Firebase setup
 
-## Limitações
-Este projeto é um protótipo de interface. Não implementa ainda autenticação real, mensagens entre dispositivos, armazenamento de imagens/áudios, chamadas WebRTC, presença online em tempo real ou backend. Os perfis e conversas iniciais são fictícios.
+O app usa Firebase Authentication (e-mail/senha) e Cloud Firestore para o chat global em tempo real.
 
-## Compilar
-O workflow em `.github/workflows/build-apk.yml` compila o APK de debug no GitHub Actions a cada push para `main`. Após uma execução bem-sucedida, baixe o artefato `Hangout-debug-apk` na página Actions do repositório.
+1. No Firebase Console, abra o projeto `hangout-1872a`.
+2. Em **Authentication → Sign-in method**, ative **Email/Password**.
+3. Em **Firestore Database**, crie um banco de dados.
+4. Abra a seção **Rules** do Firestore e publique o conteúdo do arquivo `firestore.rules` deste repositório.
+5. Compile e instale o APK criado pelo workflow GitHub Actions.
+
+As regras permitem ler o chat global apenas para usuários autenticados e limitam a criação de mensagens ao UID do usuário conectado. Não substitua as regras por regras públicas.
+
+## Build APK
+
+Cada push na branch `main` inicia o workflow **Build Hangout APK**. Abra a aba **Actions**, escolha a execução concluída e baixe o artefato `Hangout-debug-apk`.
+
+## Estado atual
+
+- Cadastro e login com e-mail/senha.
+- Perfil básico criado no Firestore ao cadastrar.
+- Chat global com sincronização em tempo real.
+- Chats privados, fotos, presença e chamadas de voz ainda precisam de implementação adicional.
