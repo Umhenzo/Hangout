@@ -47,7 +47,6 @@ private fun FirebaseAuthScreen() {
     val db = remember { FirebaseFirestore.getInstance() }
     var isRegister by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf("") }
@@ -62,18 +61,12 @@ private fun FirebaseAuthScreen() {
                 Text("hangout", color = FbText, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold)
                 Text(if (isRegister) "Crie sua conta" else "Entre na sua conta", color = FbMuted)
                 Spacer(Modifier.height(24.dp))
-                if (isRegister) {
-                    OutlinedTextField(
-                        value = username, onValueChange = { username = it },
-                        modifier = Modifier.fillMaxWidth(), label = { Text("Nome de usuário") },
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
                 OutlinedTextField(
-                    value = email, onValueChange = { email = it.trim() },
-                    modifier = Modifier.fillMaxWidth(), label = { Text("E-mail") },
-                    singleLine = true
+                    value = username,
+                    onValueChange = { username = it.filter { ch -> ch.isLetterOrDigit() || ch == '_' || ch == '.' }.take(20) },
+                    modifier = Modifier.fillMaxWidth(), label = { Text("Nick (3 a 20 caracteres)") },
+                    singleLine = true,
+                    prefix = { Text("@") }
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -84,27 +77,30 @@ private fun FirebaseAuthScreen() {
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = {
-                        if (email.isBlank() || password.length < 6 || (isRegister && username.isBlank())) {
-                            feedback = "Preencha os campos. A senha precisa ter pelo menos 6 caracteres."
+                        val safeUsername = username.trim().removePrefix("@").lowercase()
+                        if (safeUsername.length !in 3..20 || password.length < 6) {
+                            feedback = "Use um nick de 3 a 20 caracteres e uma senha de pelo menos 6 caracteres."
                         } else {
                             busy = true
                             feedback = ""
-                            val task = if (isRegister) auth.createUserWithEmailAndPassword(email, password)
-                                       else auth.signInWithEmailAndPassword(email, password)
+                            // Alias interno: a pessoa entra só com nick; não precisa ter e-mail real.
+                            val internalEmail = "$safeUsername@users.hangout.invalid"
+                            val task = if (isRegister) auth.createUserWithEmailAndPassword(internalEmail, password)
+                                       else auth.signInWithEmailAndPassword(internalEmail, password)
                             task.addOnCompleteListener { result ->
                                 busy = false
                                 if (result.isSuccessful) {
                                     val createdUser = result.result?.user
                                     if (isRegister && createdUser != null) {
-                                        val safeUsername = username.trim().removePrefix("@").take(30)
                                         db.collection("profiles").document(createdUser.uid).set(
                                             mapOf(
                                                 "uid" to createdUser.uid,
                                                 "username" to safeUsername,
-                                                "email" to (createdUser.email ?: ""),
                                                 "createdAt" to FieldValue.serverTimestamp()
                                             )
-                                        )
+                                        ).addOnFailureListener {
+                                            feedback = "Conta criada, mas não foi possível salvar o perfil."
+                                        }
                                     }
                                 } else {
                                     feedback = result.exception?.localizedMessage ?: "Não foi possível entrar. Tente novamente."
@@ -124,7 +120,7 @@ private fun FirebaseAuthScreen() {
                     Text(feedback, color = Color(0xFFFF9B9B), fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(12.dp))
-                Text("Use uma senha exclusiva para o Hangout.", color = FbMuted, fontSize = 12.sp)
+                Text("Acesso por nick e senha. Não precisa de e-mail real; não há recuperação de senha por e-mail ainda.", color = FbMuted, fontSize = 12.sp)
             }
         }
     }
