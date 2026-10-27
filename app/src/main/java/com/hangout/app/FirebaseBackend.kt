@@ -1,0 +1,229 @@
+package com.hangout.app
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+
+private val FbBg = Color(0xFF10121D)
+private val FbPanel = Color(0xFF1A1D2B)
+private val FbAccent = Color(0xFF8B7CFF)
+private val FbMint = Color(0xFF62E6BD)
+private val FbText = Color(0xFFF4F3FF)
+private val FbMuted = Color(0xFF969BB5)
+
+@Composable
+fun FirebaseGate(content: @Composable () -> Unit) {
+    val auth = remember { FirebaseAuth.getInstance() }
+    var user by remember { mutableStateOf(auth.currentUser) }
+    DisposableEffect(auth) {
+        val listener = FirebaseAuth.AuthStateListener { user = it.currentUser }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
+    if (user == null) FirebaseAuthScreen() else content()
+}
+
+@Composable
+private fun FirebaseAuthScreen() {
+    val auth = remember { FirebaseAuth.getInstance() }
+    val db = remember { FirebaseFirestore.getInstance() }
+    var isRegister by remember { mutableStateOf(false) }
+    var username by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var feedback by remember { mutableStateOf("") }
+
+    MaterialTheme(colorScheme = darkColorScheme(primary = FbAccent, secondary = FbMint, background = FbBg, surface = FbPanel, onSurface = FbText)) {
+        Surface(Modifier.fillMaxSize(), color = FbBg) {
+            Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("hangout", color = FbText, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold)
+                Text(if (isRegister) "Crie sua conta" else "Entre na sua conta", color = FbMuted)
+                Spacer(Modifier.height(24.dp))
+                if (isRegister) {
+                    OutlinedTextField(
+                        value = username, onValueChange = { username = it },
+                        modifier = Modifier.fillMaxWidth(), label = { Text("Nome de usuário") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it.trim() },
+                    modifier = Modifier.fillMaxWidth(), label = { Text("E-mail") },
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it },
+                    modifier = Modifier.fillMaxWidth(), label = { Text("Senha (mínimo 6 caracteres)") },
+                    visualTransformation = PasswordVisualTransformation(), singleLine = true
+                )
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        if (email.isBlank() || password.length < 6 || (isRegister && username.isBlank())) {
+                            feedback = "Preencha os campos. A senha precisa ter pelo menos 6 caracteres."
+                        } else {
+                            busy = true
+                            feedback = ""
+                            val task = if (isRegister) auth.createUserWithEmailAndPassword(email, password)
+                                       else auth.signInWithEmailAndPassword(email, password)
+                            task.addOnCompleteListener { result ->
+                                busy = false
+                                if (result.isSuccessful) {
+                                    val createdUser = result.result?.user
+                                    if (isRegister && createdUser != null) {
+                                        val safeUsername = username.trim().removePrefix("@").take(30)
+                                        db.collection("profiles").document(createdUser.uid).set(
+                                            mapOf(
+                                                "uid" to createdUser.uid,
+                                                "username" to safeUsername,
+                                                "email" to (createdUser.email ?: ""),
+                                                "createdAt" to FieldValue.serverTimestamp()
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    feedback = result.exception?.localizedMessage ?: "Não foi possível entrar. Tente novamente."
+                                }
+                            }
+                        }
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (busy) "Aguarde..." else if (isRegister) "Criar conta" else "Entrar")
+                }
+                TextButton(onClick = { isRegister = !isRegister; feedback = "" }) {
+                    Text(if (isRegister) "Já tenho uma conta · Entrar" else "Não tenho conta · Cadastrar")
+                }
+                if (feedback.isNotBlank()) {
+                    Text(feedback, color = Color(0xFFFF9B9B), fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Use uma senha exclusiva para o Hangout.", color = FbMuted, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
+    val auth = remember { FirebaseAuth.getInstance() }
+    val db = remember { FirebaseFirestore.getInstance() }
+    val user = auth.currentUser
+    val messages = remember { mutableStateListOf<GlobalChatMessage>() }
+    var draft by remember { mutableStateOf("") }
+    var feedback by remember { mutableStateOf("") }
+
+    DisposableEffect(user?.uid) {
+        if (user == null) {
+            feedback = "Entre na sua conta para ver as mensagens."
+            onDispose { }
+        } else {
+            val registration = db.collection("globalMessages")
+                .orderBy("createdAt", Query.Direction.ASCENDING)
+                .limit(100)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        feedback = "Não foi possível carregar mensagens. Verifique as regras do Firestore."
+                    } else if (snapshot != null) {
+                        messages.clear()
+                        snapshot.documents.forEach { doc ->
+                            val text = doc.getString("text") ?: return@forEach
+                            val uid = doc.getString("uid") ?: ""
+                            val email = doc.getString("email") ?: "usuário"
+                            messages.add(GlobalChatMessage(doc.id, uid, email, text))
+                        }
+                        feedback = ""
+                    }
+                }
+            onDispose { registration.remove() }
+        }
+    }
+
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Pra todo mundo", color = FbText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Mensagens sincronizadas em tempo real", color = FbMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(messages, key = { it.id }) { item ->
+                val mine = item.uid == user?.uid
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .background(if (mine) Color(0xFF39335E) else FbPanel).padding(12.dp)
+                ) {
+                    Text(if (mine) "Você" else item.email.substringBefore("@"), color = FbMint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(item.text, color = FbText)
+                }
+            }
+        }
+        if (feedback.isNotBlank()) Text(feedback, color = Color(0xFFFFB3B3), fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = draft, onValueChange = { if (it.length <= 2000) draft = it },
+                modifier = Modifier.weight(1f), placeholder = { Text("Fale com todo mundo…") },
+                singleLine = true
+            )
+            IconButton(onClick = {
+                val text = draft.trim()
+                val currentUser = auth.currentUser
+                if (text.isNotEmpty() && currentUser != null) {
+                    db.collection("globalMessages").add(
+                        mapOf(
+                            "text" to text,
+                            "uid" to currentUser.uid,
+                            "email" to (currentUser.email ?: "usuário"),
+                            "createdAt" to FieldValue.serverTimestamp()
+                        )
+                    ).addOnFailureListener {
+                        feedback = "Falha ao enviar. Confira se o Firestore e as regras estão configurados."
+                    }
+                    draft = ""
+                }
+            }) {
+                Icon(Icons.Default.Send, contentDescription = "Enviar", tint = FbAccent)
+            }
+        }
+    }
+}
+
+@Composable
+fun FirebaseSignOutButton() {
+    TextButton(onClick = { FirebaseAuth.getInstance().signOut() }) {
+        Text("Sair da conta", color = Color(0xFFFF9B9B))
+    }
+}
+
+private data class GlobalChatMessage(
+    val id: String,
+    val uid: String,
+    val email: String,
+    val text: String
+)
