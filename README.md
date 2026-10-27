@@ -1,26 +1,32 @@
 # Hangout
 
-App Android de conversas criado com Kotlin e Jetpack Compose.
+App Android de conversas em Kotlin e Jetpack Compose, com visual escuro em tons de cinza.
 
 ## Firebase setup
 
-O app usa Firebase Authentication (e-mail/senha) e Cloud Firestore para o chat global em tempo real.
+1. Abra o projeto `hangout-1872a` no Firebase Console.
+2. Em **Authentication → Sign-in method**, ative **Email/Password**. A interface do app pede nick e senha; internamente, o nick é convertido em um endereço de autenticação técnico que não corresponde a uma caixa de e-mail.
+3. Crie o banco em **Firestore Database**.
+4. Abra **Firestore Database → Rules**, cole o conteúdo de `firestore.rules` e publique. As regras desse arquivo agora incluem mensagens privadas.
+5. Compile e instale o APK gerado pelo workflow **Build Hangout APK**.
 
-1. No Firebase Console, abra o projeto `hangout-1872a`.
-2. Em **Authentication → Sign-in method**, ative **Email/Password**.
-3. Em **Firestore Database**, crie um banco de dados.
-4. Abra a seção **Rules** do Firestore e publique o conteúdo do arquivo `firestore.rules` deste repositório.
-5. Compile e instale o APK criado pelo workflow GitHub Actions.
+**Importante:** depois de atualizar o arquivo `firestore.rules` no GitHub, as regras não são publicadas automaticamente no Firebase Console. Publique o conteúdo manualmente no Console.
 
-As regras permitem ler o chat global apenas para usuários autenticados e limitam a criação de mensagens ao UID do usuário conectado. Não substitua as regras por regras públicas.
+## Recursos implementados
+
+- Cadastro e login com nick e senha, usando Firebase Authentication Email/Password por baixo dos panos.
+- Pesquisa de usuários pelo nick cadastrado.
+- Conversas privadas entre duas contas autenticadas, com mensagens em tempo real e prévia da última mensagem.
+- Chat global em tempo real.
+- Lista inicial sem perfis fictícios.
+- Tema cinza escuro.
+
+## Ainda pendente
+
+- Recuperação de senha para contas criadas sem e-mail real.
+- Chamadas de voz, fotos e presença online.
+- Validação de acessibilidade/usabilidade em aparelhos reais.
 
 ## Build APK
 
-Cada push na branch `main` inicia o workflow **Build Hangout APK**. Abra a aba **Actions**, escolha a execução concluída e baixe o artefato `Hangout-debug-apk`.
-
-## Estado atual
-
-- Cadastro e login com e-mail/senha.
-- Perfil básico criado no Firestore ao cadastrar.
-- Chat global com sincronização em tempo real.
-- Chats privados, fotos, presença e chamadas de voz ainda precisam de implementação adicional.
+Cada push na branch `main` inicia o workflow. Abra a aba **Actions**, selecione a execução mais recente concluída e baixe o artefato `Hangout-debug-apk`.
