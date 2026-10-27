@@ -52,7 +52,7 @@ service cloud.firestore {
     }
 
     match /privateChats/{chatId} {
-      allow read: if signedIn() && resource.data.members.hasAny([request.auth.uid]);
+      allow read: if signedIn() && (!exists(/databases/$(database)/documents/privateChats/$(chatId)) || resource.data.members.hasAny([request.auth.uid]));
 
       allow create: if signedIn()
         && request.resource.data.members is list
