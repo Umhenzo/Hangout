@@ -333,9 +333,7 @@ private fun ChatsTab(
                             .clickable { beginChat(profile) }.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF414141)), contentAlignment = Alignment.Center) {
-                            Text(profile.username.take(1).uppercase(), color = MainText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        }
+                        ProfileAvatar(profile.username, profile.photoUrl, 44)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("@${profile.username}", color = MainText, fontWeight = FontWeight.SemiBold)
                             Text("Toque para conversar", color = Muted, fontSize = 12.sp)
@@ -363,12 +361,10 @@ private fun ChatsTab(
                             .clickable { onOpenChat(chat) }.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF414141)), contentAlignment = Alignment.Center) {
-                            Text(chat.peerUsername.take(1).uppercase(), color = MainText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        }
+                        ProfileAvatar(chat.peerUsername, chat.peerPhotoUrl, 48)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("@${chat.peerUsername}", color = MainText, fontWeight = FontWeight.SemiBold)
-                            Text(chat.lastMessage.ifBlank { "Toque para abrir a conversa" }, color = Muted, fontSize = 12.sp, maxLines = 1)
+                            Text(chat.lastMessage.ifBlank { if (chat.peerOnline) "● Online agora" else "Toque para abrir a conversa" }, color = Muted, fontSize = 12.sp, maxLines = 1)
                         }
                         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Muted)
                     }
