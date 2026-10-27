@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -30,7 +31,9 @@ data class ChatSummary(
     val peerUsername: String,
     val members: List<String>,
     val lastMessage: String,
-    val updatedAt: Timestamp?
+    val updatedAt: Timestamp?,
+    val peerPhotoUrl: String? = null,
+    val peerOnline: Boolean = false
 )
 
 private data class PrivateMessage(
@@ -104,11 +107,19 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
                 Modifier.size(42.dp).clip(CircleShape).background(Color(0xFF414141)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(chat.peerUsername.take(1).uppercase(), color = PrivateText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                if (!chat.peerPhotoUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = chat.peerPhotoUrl,
+                        contentDescription = "Foto de perfil",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                } else {
+                    Text(chat.peerUsername.take(1).uppercase(), color = PrivateText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
             }
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                 Text("@${chat.peerUsername}", color = PrivateText, fontWeight = FontWeight.Bold)
-                Text("Conversa privada", color = PrivateMuted, fontSize = 11.sp)
+                Text(if (chat.peerOnline) "● Online agora" else "Conversa privada", color = PrivateMuted, fontSize = 11.sp)
             }
         }
 
