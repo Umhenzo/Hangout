@@ -2,6 +2,8 @@ package com.hangout.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,10 +23,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
+import com.google.firebase.storage.FirebaseStorage
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.delay
 
 private val Bg = Color(0xFF171717)
@@ -34,9 +42,37 @@ private val MainText = Color(0xFFF5F5F5)
 private val Muted = Color(0xFFA5A5A5)
 
 class MainActivity : ComponentActivity() {
+    private val presenceObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) { updatePresence(true) }
+        override fun onStop(owner: LifecycleOwner) { updatePresence(false) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(presenceObserver)
         setContent { FirebaseGate { HangoutApp() } }
+    }
+
+    override fun onDestroy() {
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(presenceObserver)
+        super.onDestroy()
+    }
+
+    private fun updatePresence(online: Boolean) {
+        val user = FirebaseAuth.getInstance().currentUser ?: return
+        val username = user.email?.substringBefore("@") ?: return
+        val ref = FirebaseFirestore.getInstance().collection("profiles").document(user.uid)
+        ref.get().addOnSuccessListener { snapshot ->
+            if (!online && !snapshot.exists()) return@addOnSuccessListener
+            val fields = hashMapOf<String, Any>(
+                "uid" to user.uid,
+                "username" to username,
+                "isOnline" to online,
+                "lastSeen" to FieldValue.serverTimestamp()
+            )
+            if (!snapshot.exists()) fields["createdAt"] = FieldValue.serverTimestamp()
+            ref.set(fields, SetOptions.merge())
+        }
     }
 }
 
@@ -125,7 +161,7 @@ private fun HangoutApp() {
     }
 }
 
-private data class HangoutProfile(val uid: String, val username: String)
+private data class HangoutProfile(val uid: String, val username: String, val photoUrl: String? = null, val isOnline: Boolean = false)
 
 @Composable
 private fun ChatsTab(
@@ -162,7 +198,7 @@ private fun ChatsTab(
                     snapshot.documents.forEach { doc ->
                         val profileUid = doc.getString("uid") ?: doc.id
                         val username = doc.getString("username") ?: return@forEach
-                        if (profileUid != uid) results.add(HangoutProfile(profileUid, username))
+                        if (profileUid != uid) results.add(HangoutProfile(profileUid, username, doc.getString("photoUrl"), doc.getBoolean("isOnline") == true))
                     }
                     searching = false
                 }
@@ -205,7 +241,7 @@ private fun ChatsTab(
                                 .addOnSuccessListener { profile ->
                                     val name = profile.getString("username") ?: "usuário"
                                     val index = chats.indexOfFirst { it.id == summary.id }
-                                    if (index >= 0) chats[index] = chats[index].copy(peerUsername = name)
+                                    if (index >= 0) chats[index] = chats[index].copy(peerUsername = name, peerPhotoUrl = profile.getString("photoUrl"), peerOnline = profile.getBoolean("isOnline") == true)
                                 }
                         }
                     }
@@ -246,7 +282,7 @@ private fun ChatsTab(
                             "lastSenderUid" to ""
                         )
                     ).addOnSuccessListener {
-                        onOpenChat(ChatSummary(chatId, profile.uid, profile.username, members, "", Timestamp.now()))
+                        onOpenChat(ChatSummary(chatId, profile.uid, profile.username, members, "", Timestamp.now(), profile.photoUrl, profile.isOnline))
                     }.addOnFailureListener {
                         document.get().addOnSuccessListener { concurrent ->
                             if (concurrent.exists()) {
