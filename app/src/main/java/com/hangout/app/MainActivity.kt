@@ -41,7 +41,7 @@ private val people = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { HangoutApp() }
+        setContent { FirebaseGate { HangoutApp() } }
     }
 }
 
@@ -117,7 +117,7 @@ private fun HangoutApp() {
                                 }
                             }
                         }
-                        1 -> GlobalTab(Modifier.weight(1f)) { notice = it }
+                        1 -> FirebaseGlobalChat(Modifier.weight(1f))
                         2 -> RoomsTab(Modifier.weight(1f)) { notice = it }
                         else -> ProfileTab(Modifier.weight(1f)) { notice = it }
                     }
@@ -160,24 +160,6 @@ private fun Bubble(text: String, mine: Boolean) {
 }
 
 @Composable
-private fun GlobalTab(modifier: Modifier, notify: (String) -> Unit) {
-    var draft by remember { mutableStateOf("") }
-    val messages = remember { mutableStateListOf("Luna: alguém online pra jogar? 🎮", "Kai: bom diaaa ✨", "Mika: essa figurinha KKK 😂") }
-    Column(modifier.padding(horizontal = 16.dp)) {
-        Text("Pra todo mundo", color = MainText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Converse com a comunidade Hangout", color = Muted, fontSize = 12.sp)
-        Spacer(Modifier.height(12.dp))
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(messages) { Text(it, Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Panel).padding(14.dp), color = MainText) }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(draft, { draft = it }, Modifier.weight(1f), placeholder = { Text("Fale com todo mundo…") }, singleLine = true)
-            IconButton(onClick = { if (draft.isNotBlank()) { messages.add("Você: $draft"); draft = "" } }) { Icon(Icons.Default.Send, null, tint = Accent) }
-        }
-    }
-}
-
-@Composable
 private fun RoomsTab(modifier: Modifier, notify: (String) -> Unit) {
     var joined by remember { mutableStateOf("") }
     Column(modifier.padding(16.dp)) {
@@ -214,6 +196,7 @@ private fun ProfileTab(modifier: Modifier, notify: (String) -> Unit) {
                 TextButton(onClick = { notify("Última atividade demonstrativa") }) { Text("◷  Última vez online: agora mesmo") }
                 TextButton(onClick = { notify("Foto de perfil será integrada depois") }) { Text("📷  Personalizar avatar") }
                 TextButton(onClick = { notify("Privacidade demonstrativa") }) { Text("🔒  Privacidade") }
+                FirebaseSignOutButton()
             }
         }
     }
