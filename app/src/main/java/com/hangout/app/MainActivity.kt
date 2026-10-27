@@ -117,9 +117,9 @@ private fun HangoutApp() {
                                 }
                             }
                         }
-                        1 -> GlobalTab { notice = it }
-                        2 -> RoomsTab { notice = it }
-                        else -> ProfileTab { notice = it }
+                        1 -> GlobalTab(Modifier.weight(1f)) { notice = it }
+                        2 -> RoomsTab(Modifier.weight(1f)) { notice = it }
+                        else -> ProfileTab(Modifier.weight(1f)) { notice = it }
                     }
                     NavigationBar(containerColor = Panel) {
                         listOf("Chats", "Global", "Salas", "Perfil").forEachIndexed { i, label ->
@@ -160,10 +160,10 @@ private fun Bubble(text: String, mine: Boolean) {
 }
 
 @Composable
-private fun GlobalTab(notify: (String) -> Unit) {
+private fun GlobalTab(modifier: Modifier, notify: (String) -> Unit) {
     var draft by remember { mutableStateOf("") }
     val messages = remember { mutableStateListOf("Luna: alguém online pra jogar? 🎮", "Kai: bom diaaa ✨", "Mika: essa figurinha KKK 😂") }
-    Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+    Column(modifier.padding(horizontal = 16.dp)) {
         Text("Pra todo mundo", color = MainText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text("Converse com a comunidade Hangout", color = Muted, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
@@ -178,9 +178,9 @@ private fun GlobalTab(notify: (String) -> Unit) {
 }
 
 @Composable
-private fun RoomsTab(notify: (String) -> Unit) {
+private fun RoomsTab(modifier: Modifier, notify: (String) -> Unit) {
     var joined by remember { mutableStateOf("") }
-    Column(Modifier.weight(1f).padding(16.dp)) {
+    Column(modifier.padding(16.dp)) {
         Text("Salas de voz", color = MainText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Text("Entre pra conversar ao vivo com sua galera.", color = Muted)
         Spacer(Modifier.height(16.dp))
@@ -195,10 +195,10 @@ private fun RoomsTab(notify: (String) -> Unit) {
 }
 
 @Composable
-private fun ProfileTab(notify: (String) -> Unit) {
+private fun ProfileTab(modifier: Modifier, notify: (String) -> Unit) {
     var status by remember { mutableStateOf("Jogando Roblox") }
     var country by remember { mutableStateOf("🇧🇷 Brasil") }
-    Column(Modifier.weight(1f).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(18.dp))
         Box(Modifier.size(100.dp).clip(CircleShape).background(Color(0xFF39335E)), contentAlignment = Alignment.Center) { Text("🌌", fontSize = 48.sp) }
         Text("Seu perfil", Modifier.padding(top = 12.dp), color = MainText, fontSize = 25.sp, fontWeight = FontWeight.Bold)
