@@ -395,21 +395,147 @@ private fun RoomsTab(modifier: Modifier) {
 @Composable
 private fun ProfileTab(modifier: Modifier) {
     val user = FirebaseAuth.getInstance().currentUser
-    val username = user?.email?.substringBefore("@") ?: "usuário"
-    Column(modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Box(Modifier.size(100.dp).clip(CircleShape).background(Color(0xFF414141)), contentAlignment = Alignment.Center) {
-            Text(username.take(1).uppercase(), color = MainText, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+    val db = remember { FirebaseFirestore.getInstance() }
+    val uid = user?.uid
+    val defaultUsername = user?.email?.substringBefore("@") ?: "usuário"
+    var username by remember { mutableStateOf(defaultUsername) }
+    var photoUrl by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf("Disponível") }
+    var online by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf("") }
+
+    DisposableEffect(uid) {
+        if (uid == null) {
+            onDispose { }
+        } else {
+            val registration = db.collection("profiles").document(uid).addSnapshotListener { snapshot, error ->
+                if (error == null && snapshot != null && snapshot.exists()) {
+                    username = snapshot.getString("username") ?: defaultUsername
+                    photoUrl = snapshot.getString("photoUrl")
+                    status = snapshot.getString("status") ?: "Disponível"
+                    online = snapshot.getBoolean("isOnline") == true
+                }
+            }
+            onDispose { registration.remove() }
         }
-        Spacer(Modifier.height(14.dp))
-        Text("Seu perfil", color = MainText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text("@${username}", color = Muted)
-        Spacer(Modifier.height(8.dp))
-        Text("Conectado", color = Accent, fontSize = 12.sp)
-        Spacer(Modifier.height(22.dp))
-        OutlinedButton(onClick = { FirebaseAuth.getInstance().signOut() }) {
-            Icon(Icons.Default.Logout, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Sair da conta")
+    }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && uid != null) {
+            busy = true
+            notice = ""
+            val imageRef = FirebaseStorage.getInstance().reference.child("profilePhotos/" + uid + "/avatar.jpg")
+            imageRef.putFile(uri)
+                .continueWithTask { task ->
+                    if (!task.isSuccessful) throw task.exception ?: Exception("Upload falhou")
+                    imageRef.downloadUrl
+                }
+                .addOnSuccessListener { url ->
+                    db.collection("profiles").document(uid).update("photoUrl", url.toString())
+                        .addOnSuccessListener { notice = "Foto de perfil atualizada." }
+                        .addOnFailureListener { notice = "Foto enviada, mas o perfil não foi atualizado. Verifique as regras do Firestore." }
+                        .addOnCompleteListener { busy = false }
+                }
+                .addOnFailureListener {
+                    busy = false
+                    notice = "Falha no upload. Ative o Firebase Storage e publique storage.rules."
+                }
+        }
+    }
+
+    Column(
+        modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            color = Panel,
+            tonalElevation = 2.dp
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(contentAlignment = Alignment.BottomEnd) {
+                    ProfileAvatar(username, photoUrl, 104)
+                    Box(
+                        Modifier.size(22.dp).clip(CircleShape)
+                            .background(if (online) Color(0xFFB7B7B7) else Color(0xFF666666))
+                            .padding(4.dp).clip(CircleShape).background(Panel)
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("Seu perfil", color = MainText, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                Text("@" + username, color = Muted, fontSize = 14.sp)
+                Spacer(Modifier.height(6.dp))
+                Text(if (online) "● Online agora" else "○ Offline", color = Accent, fontSize = 12.sp)
+                Spacer(Modifier.height(20.dp))
+                OutlinedButton(
+                    onClick = { picker.launch("image/*") },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (busy) "Enviando foto…" else "Alterar foto de perfil")
+                }
+                Spacer(Modifier.height(18.dp))
+                OutlinedTextField(
+                    value = status,
+                    onValueChange = { status = it.take(60) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Seu status") },
+                    placeholder = { Text("O que você está fazendo?") },
+                    singleLine = true
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        if (uid != null) {
+                            db.collection("profiles").document(uid)
+                                .update("status", status.trim().ifBlank { "Disponível" })
+                                .addOnSuccessListener { notice = "Status atualizado." }
+                                .addOnFailureListener { notice = "Não foi possível salvar. Verifique as regras do Firestore." }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Salvar status") }
+                Spacer(Modifier.height(18.dp))
+                HorizontalDivider(color = Bg)
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { FirebaseAuth.getInstance().signOut() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Logout, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Sair da conta")
+                }
+                if (notice.isNotBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(notice, color = Muted, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileAvatar(username: String, photoUrl: String?, size: Int) {
+    Box(
+        Modifier.size(size.dp).clip(CircleShape).background(Color(0xFF414141)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!photoUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = photoUrl,
+                contentDescription = "Foto de perfil",
+                modifier = Modifier.fillMaxSize().clip(CircleShape)
+            )
+        } else {
+            Text(username.take(1).uppercase(), color = MainText, fontSize = (size * 0.38).sp, fontWeight = FontWeight.Bold)
         }
     }
 }
