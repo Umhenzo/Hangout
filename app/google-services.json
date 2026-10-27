@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "40474538829",
+    "project_id": "hangout-1872a",
+    "storage_bucket": "hangout-1872a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:40474538829:android:10c9e96f5cefba933abd04",
+        "android_client_info": {
+          "package_name": "com.hangout.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDcxyu-c1qlPk8LxZdIGjYSYEgqVeWw4-s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
