@@ -376,16 +376,7 @@ private fun ChatsTab(
 
 @Composable
 private fun RoomsTab(modifier: Modifier) {
-    Column(modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(Icons.Default.GraphicEq, contentDescription = null, tint = Accent, modifier = Modifier.size(52.dp))
-        Spacer(Modifier.height(14.dp))
-        Text("Salas de voz", color = MainText, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Text(
-            "As salas de voz ainda não estão conectadas a um serviço de áudio. Os botões anteriores eram apenas demonstrativos.",
-            color = Muted,
-            fontSize = 14.sp
-        )
-    }
+    VoiceRoomsTab(modifier)
 }
 
 @Composable
