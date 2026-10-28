@@ -51,6 +51,13 @@ service cloud.firestore {
         );
     }
 
+    function validAudio(data) {
+      return 'audioData' in data
+        && data.audioData is string
+        && data.audioData.size() <= 700000
+        && data.audioData.matches('^[A-Za-z0-9+/=]+$');
+    }
+
     match /profiles/{userId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == userId
@@ -70,9 +77,11 @@ service cloud.firestore {
         && (
           request.resource.data.text.size() > 0
           || validImageUrl(request.resource.data)
+          || validAudio(request.resource.data)
         )
         && (!('imageUrl' in request.resource.data) || validImageUrl(request.resource.data))
-        && request.resource.data.keys().hasOnly(['text', 'imageUrl', 'uid', 'email', 'createdAt']);
+        && (!('audioData' in request.resource.data) || validAudio(request.resource.data))
+        && request.resource.data.keys().hasOnly(['text', 'imageUrl', 'audioData', 'uid', 'email', 'createdAt']);
       allow update, delete: if false;
     }
 
@@ -113,10 +122,12 @@ service cloud.firestore {
           && (
             request.resource.data.text.size() > 0
             || validImageUrl(request.resource.data)
+            || validAudio(request.resource.data)
           )
           && (!('imageUrl' in request.resource.data) || validImageUrl(request.resource.data))
+          && (!('audioData' in request.resource.data) || validAudio(request.resource.data))
           && request.resource.data.keys().hasOnly([
-            'text', 'imageUrl', 'senderUid', 'senderUsername', 'createdAt'
+            'text', 'imageUrl', 'audioData', 'senderUid', 'senderUsername', 'createdAt'
           ]);
         allow update, delete: if false;
       }
