@@ -87,6 +87,37 @@ exports.createVoiceToken = onCall(
   }
 );
 
+exports.createRecoveryCode = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Entre na sua conta para gerar um código.");
+  }
+
+  const profileRef = db.collection("profiles").doc(request.auth.uid);
+  const profile = await profileRef.get();
+  if (!profile.exists) {
+    throw new HttpsError("failed-precondition", "O perfil ainda não está pronto.");
+  }
+
+  const username = profile.get("username");
+  if (typeof username !== "string" || !/^[a-z0-9_.]{3,20}$/.test(username)) {
+    throw new HttpsError("failed-precondition", "O perfil não tem um nick válido.");
+  }
+
+  const recoveryCode = makeRecoveryCode();
+  await db.collection("privateRecovery").doc(request.auth.uid).set({
+    uid: request.auth.uid,
+    recoveryHash: hashRecoveryCode(recoveryCode),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+
+  // Remove a hash legada do perfil público, caso alguma versão anterior a tenha guardado.
+  if (profile.get("recoveryHash")) {
+    await profileRef.update({ recoveryHash: admin.firestore.FieldValue.delete() });
+  }
+
+  return { recoveryCode };
+});
+
 exports.recoverAccount = onCall(async (request) => {
   const raw = request.data || {};
   const username = cleanNick(raw.username);
@@ -113,7 +144,13 @@ exports.recoverAccount = onCall(async (request) => {
   }
 
   const profileDoc = match.docs[0];
-  const savedHash = profileDoc.get("recoveryHash");
+  const uid = profileDoc.get("uid");
+  if (typeof uid !== "string" || !uid) {
+    throw new HttpsError("failed-precondition", "A conta não está pronta para recuperação.");
+  }
+
+  const recoveryDoc = await db.collection("privateRecovery").doc(uid).get();
+  const savedHash = recoveryDoc.get("recoveryHash");
   const proposedHash = hashRecoveryCode(recoveryCode);
   const savedBytes = typeof savedHash === "string" ? Buffer.from(savedHash, "hex") : Buffer.alloc(0);
   const proposedBytes = Buffer.from(proposedHash, "hex");
@@ -123,14 +160,13 @@ exports.recoverAccount = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Nick ou código de recuperação inválido.");
   }
 
-  const uid = profileDoc.get("uid");
-  if (typeof uid !== "string" || !uid) {
-    throw new HttpsError("failed-precondition", "A conta não está pronta para recuperação.");
-  }
-
   await admin.auth().updateUser(uid, { password: newPassword });
   const nextRecoveryCode = makeRecoveryCode();
-  await profileDoc.ref.update({ recoveryHash: hashRecoveryCode(nextRecoveryCode) });
+  await db.collection("privateRecovery").doc(uid).set({
+    uid,
+    recoveryHash: hashRecoveryCode(nextRecoveryCode),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
 
   return { success: true, newRecoveryCode: nextRecoveryCode };
 });
