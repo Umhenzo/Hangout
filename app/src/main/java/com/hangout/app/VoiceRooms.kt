@@ -16,6 +16,9 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PhoneDisabled
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -102,11 +105,12 @@ fun VoiceRoomsTab(modifier: Modifier = Modifier) {
         }
     }
 
+    val latestRoom by rememberUpdatedState(voiceRoom)
     DisposableEffect(Unit) {
         onDispose {
-            val room = voiceRoom
+            val room = latestRoom
             if (room != null) {
-                scope.launch {
+                CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).launch {
                     try {
                         room.localParticipant.setMicrophoneEnabled(false)
                         room.disconnect()
