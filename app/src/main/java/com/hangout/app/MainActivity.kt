@@ -31,6 +31,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.functions.FirebaseFunctions
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -502,15 +503,20 @@ private fun ProfileTab(modifier: Modifier) {
                     onClick = {
                         if (uid != null) {
                             recoveryWorking = true
-                            val code = generateRecoveryCode()
-                            val hash = hashRecoveryCode(code)
-                            db.collection("profiles").document(uid).update("recoveryHash", hash)
-                                .addOnSuccessListener {
-                                    recoveryCodeToShow = code
-                                    notice = "Guarde seu código de recuperação."
+                            FirebaseFunctions.getInstance().getHttpsCallable("createRecoveryCode")
+                                .call()
+                                .addOnSuccessListener { result ->
+                                    val data = result.getData() as? Map<*, *>
+                                    val code = data?.get("recoveryCode") as? String
+                                    if (code != null) {
+                                        recoveryCodeToShow = code
+                                        notice = "Guarde seu código de recuperação."
+                                    } else {
+                                        notice = "Resposta inválida do serviço de recuperação."
+                                    }
                                 }
                                 .addOnFailureListener {
-                                    notice = "Não foi possível salvar o código. Confira as regras do Firestore."
+                                    notice = "Não foi possível gerar. Publique a função createRecoveryCode no Firebase."
                                 }
                                 .addOnCompleteListener { recoveryWorking = false }
                         }
@@ -550,19 +556,6 @@ private fun ProfileTab(modifier: Modifier) {
             confirmButton = { TextButton(onClick = { recoveryCodeToShow = null }) { Text("Já salvei") } }
         )
     }
-}
-
-private fun generateRecoveryCode(): String {
-    val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    val random = java.security.SecureRandom()
-    val raw = buildString { repeat(16) { append(alphabet[random.nextInt(alphabet.length)]) } }
-    return raw.chunked(4).joinToString("-")
-}
-
-private fun hashRecoveryCode(code: String): String {
-    val normalized = code.replace("-", "").trim().uppercase()
-    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
-    return digest.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 }
 
 @Composable
