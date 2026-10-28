@@ -166,7 +166,7 @@ private fun HangoutApp() {
     }
 }
 
-private data class HangoutProfile(val uid: String, val username: String, val photoUrl: String? = null, val isOnline: Boolean = false)
+private data class HangoutProfile(val uid: String, val username: String, val photoUrl: String? = null, val isOnline: Boolean = false, val status: String = "Disponível")
 
 @Composable
 private fun ChatsTab(
@@ -203,7 +203,7 @@ private fun ChatsTab(
                     snapshot.documents.forEach { doc ->
                         val profileUid = doc.getString("uid") ?: doc.id
                         val username = doc.getString("username") ?: return@forEach
-                        if (profileUid != uid) results.add(HangoutProfile(profileUid, username, doc.getString("photoUrl"), doc.getBoolean("isOnline") == true))
+                        if (profileUid != uid) results.add(HangoutProfile(profileUid, username, doc.getString("photoUrl"), doc.getBoolean("isOnline") == true, doc.getString("status") ?: "Disponível"))
                     }
                     searching = false
                 }
@@ -345,7 +345,7 @@ private fun ChatsTab(
                         ProfileAvatar(profile.username, profile.photoUrl, 44)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("@${profile.username}", color = MainText, fontWeight = FontWeight.SemiBold)
-                            Text(if (profile.isOnline) "● Online agora" else "Toque para conversar", color = Muted, fontSize = 12.sp)
+                            Text(if (profile.status != "Disponível") profile.status else if (profile.isOnline) "● Online agora" else "Toque para conversar", color = Muted, fontSize = 12.sp, maxLines = 1)
                         }
                         Icon(Icons.Default.Chat, contentDescription = "Iniciar conversa", tint = Accent)
                     }
@@ -483,8 +483,8 @@ private fun ProfileTab(modifier: Modifier) {
                     value = status,
                     onValueChange = { status = it.take(60) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Seu status") },
-                    placeholder = { Text("O que você está fazendo?") },
+                    label = { Text("Status / jogo atual") },
+                    placeholder = { Text("Ex.: Jogando Roblox") },
                     singleLine = true
                 )
                 Spacer(Modifier.height(10.dp))
