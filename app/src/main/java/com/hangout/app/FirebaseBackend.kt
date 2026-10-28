@@ -19,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -29,7 +32,6 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
-import com.google.firebase.storage.FirebaseStorage
 import coil.compose.AsyncImage
 
 private val FbBg = Color(0xFF171717)
@@ -284,6 +286,7 @@ private fun FirebaseAuthScreen() {
 fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
     val auth = remember { FirebaseAuth.getInstance() }
     val db = remember { FirebaseFirestore.getInstance() }
+    val context = LocalContext.current.applicationContext
     val user = auth.currentUser
     val messages = remember { mutableStateListOf<GlobalChatMessage>() }
     var draft by remember { mutableStateOf("") }
@@ -295,33 +298,30 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
         val currentUser = auth.currentUser
         if (uri != null && currentUser != null && !uploadingPhoto && !sending) {
             uploadingPhoto = true
-            feedback = ""
-            val imageRef = FirebaseStorage.getInstance().reference
-                .child("globalPhotos/" + currentUser.uid + "/" + System.currentTimeMillis() + ".jpg")
-            imageRef.putFile(uri)
-                .continueWithTask { task ->
-                    if (!task.isSuccessful) throw task.exception ?: Exception("Upload falhou")
-                    imageRef.downloadUrl
+            feedback = "Comprimindo foto…"
+            Thread {
+                val imageData = HangoutImageData.encode(context, uri)
+                Handler(Looper.getMainLooper()).post {
+                    if (imageData == null) {
+                        uploadingPhoto = false
+                        feedback = "Não foi possível preparar a foto. Tente outra imagem."
+                    } else {
+                        db.collection("globalMessages").add(
+                            mapOf(
+                                "text" to "",
+                                "imageUrl" to imageData,
+                                "uid" to currentUser.uid,
+                                "email" to (currentUser.email ?: "usuário"),
+                                "createdAt" to FieldValue.serverTimestamp()
+                            )
+                        ).addOnSuccessListener {
+                            feedback = ""
+                        }.addOnFailureListener {
+                            feedback = "Foto não enviada. Verifique as regras do Firestore."
+                        }.addOnCompleteListener { uploadingPhoto = false }
+                    }
                 }
-                .addOnSuccessListener { url ->
-                    db.collection("globalMessages").add(
-                        mapOf(
-                            "text" to "",
-                            "imageUrl" to url.toString(),
-                            "uid" to currentUser.uid,
-                            "email" to (currentUser.email ?: "usuário"),
-                            "createdAt" to FieldValue.serverTimestamp()
-                        )
-                    ).addOnSuccessListener {
-                        feedback = ""
-                    }.addOnFailureListener {
-                        feedback = "A foto foi enviada, mas a mensagem não foi salva. Confira as regras do Firestore."
-                    }.addOnCompleteListener { uploadingPhoto = false }
-                }
-                .addOnFailureListener {
-                    uploadingPhoto = false
-                    feedback = "Não foi possível enviar a foto. Ative o Storage e publique storage.rules."
-                }
+            }.start()
         }
     }
 
@@ -332,7 +332,7 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
         } else {
             val registration = db.collection("globalMessages")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(100)
+                .limit(40)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         feedback = "Não foi possível carregar mensagens. Verifique as regras do Firestore."
@@ -396,7 +396,7 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                         Spacer(Modifier.height(3.dp))
                         if (!item.imageUrl.isNullOrBlank()) {
                             AsyncImage(
-                                model = item.imageUrl,
+                                model = remember(item.imageUrl) { HangoutImageData.model(item.imageUrl) },
                                 contentDescription = "Foto enviada ao chat global",
                                 modifier = Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)),
                                 contentScale = ContentScale.Crop
