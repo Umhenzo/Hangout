@@ -1,6 +1,8 @@
 package com.hangout.app
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,12 +11,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,6 +27,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.Timestamp
 
 data class ChatSummary(
@@ -40,7 +45,8 @@ private data class PrivateMessage(
     val id: String,
     val senderUid: String,
     val senderUsername: String,
-    val text: String
+    val text: String,
+    val imageUrl: String? = null
 )
 
 private val PrivateBg = Color(0xFF171717)
@@ -61,6 +67,50 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
     var draft by remember(chat.id) { mutableStateOf("") }
     var feedback by remember(chat.id) { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var uploadingPhoto by remember { mutableStateOf(false) }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && currentUid != null && !sending && !uploadingPhoto) {
+            uploadingPhoto = true
+            feedback = ""
+            val imageRef = FirebaseStorage.getInstance().reference
+                .child("chatPhotos/" + chat.id + "/" + currentUid + "/" + System.currentTimeMillis() + ".jpg")
+            imageRef.putFile(uri)
+                .continueWithTask { task ->
+                    if (!task.isSuccessful) throw task.exception ?: Exception("Upload falhou")
+                    imageRef.downloadUrl
+                }
+                .addOnSuccessListener { url ->
+                    db.collection("privateChats").document(chat.id).collection("messages")
+                        .add(
+                            mapOf(
+                                "text" to "",
+                                "imageUrl" to url.toString(),
+                                "senderUid" to currentUid,
+                                "senderUsername" to currentUsername,
+                                "createdAt" to FieldValue.serverTimestamp()
+                            )
+                        )
+                        .addOnSuccessListener {
+                            db.collection("privateChats").document(chat.id).update(
+                                mapOf(
+                                    "lastMessage" to "📷 Foto",
+                                    "lastSenderUid" to currentUid,
+                                    "updatedAt" to FieldValue.serverTimestamp()
+                                )
+                            )
+                        }
+                        .addOnFailureListener {
+                            feedback = "A foto foi enviada, mas não foi possível criar a mensagem. Confira as regras do Firestore."
+                        }
+                        .addOnCompleteListener { uploadingPhoto = false }
+                }
+                .addOnFailureListener {
+                    uploadingPhoto = false
+                    feedback = "Não foi possível enviar a foto. Ative o Firebase Storage e publique storage.rules."
+                }
+        }
+    }
 
     DisposableEffect(chat.id, currentUid) {
         if (currentUid == null) {
@@ -84,7 +134,8 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
                                     id = document.id,
                                     senderUid = document.getString("senderUid") ?: "",
                                     senderUsername = document.getString("senderUsername") ?: "usuário",
-                                    text = text
+                                    text = text,
+                                    imageUrl = document.getString("imageUrl")
                                 )
                             )
                         }
@@ -154,7 +205,16 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
                                 Text("@${item.senderUsername}", color = PrivateAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(2.dp))
                             }
-                            Text(item.text, color = PrivateText, fontSize = 15.sp)
+                            if (!item.imageUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = item.imageUrl,
+                                    contentDescription = "Foto enviada na conversa",
+                                    modifier = Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                if (item.text.isNotBlank()) Spacer(Modifier.height(6.dp))
+                            }
+                            if (item.text.isNotBlank()) Text(item.text, color = PrivateText, fontSize = 15.sp)
                         }
                     }
                 }
@@ -169,17 +229,21 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
             Modifier.fillMaxWidth().background(PrivatePanel).padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                enabled = !sending && !uploadingPhoto,
+                onClick = { photoPicker.launch("image/*") }
+            ) { Icon(Icons.Default.Image, contentDescription = "Enviar foto", tint = PrivateAccent) }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { if (it.length <= 2000) draft = it },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Mensagem…") },
                 singleLine = true,
-                enabled = !sending,
+                enabled = !sending && !uploadingPhoto,
                 shape = RoundedCornerShape(24.dp)
             )
             IconButton(
-                enabled = !sending && draft.isNotBlank(),
+                enabled = !sending && !uploadingPhoto && draft.isNotBlank(),
                 onClick = {
                     val text = draft.trim()
                     val uid = auth.currentUser?.uid
