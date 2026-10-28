@@ -65,7 +65,7 @@ fun VoiceRoomsTab(modifier: Modifier = Modifier) {
                 .getHttpsCallable("createVoiceToken")
                 .call(mapOf("roomName" to selected.id))
                 .addOnSuccessListener { result ->
-                    val data = result.data as? Map<*, *>
+                    val data = result.getData() as? Map<*, *>
                     val serverUrl = data?.get("url") as? String
                     val token = data?.get("token") as? String
                     if (serverUrl.isNullOrBlank() || token.isNullOrBlank()) {
