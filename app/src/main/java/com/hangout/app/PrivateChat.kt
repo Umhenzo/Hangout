@@ -19,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,7 +30,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.Timestamp
 
 data class ChatSummary(
@@ -60,6 +62,7 @@ private val PrivateOutgoing = Color(0xFF3B3B3B)
 fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
     val auth = remember { FirebaseAuth.getInstance() }
     val db = remember { FirebaseFirestore.getInstance() }
+    val context = LocalContext.current.applicationContext
     val currentUser = auth.currentUser
     val currentUid = currentUser?.uid
     val currentUsername = currentUser?.email?.substringBefore("@") ?: "usuário"
@@ -72,43 +75,40 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && currentUid != null && !sending && !uploadingPhoto) {
             uploadingPhoto = true
-            feedback = ""
-            val imageRef = FirebaseStorage.getInstance().reference
-                .child("chatPhotos/" + chat.id + "/" + currentUid + "/" + System.currentTimeMillis() + ".jpg")
-            imageRef.putFile(uri)
-                .continueWithTask { task ->
-                    if (!task.isSuccessful) throw task.exception ?: Exception("Upload falhou")
-                    imageRef.downloadUrl
-                }
-                .addOnSuccessListener { url ->
-                    db.collection("privateChats").document(chat.id).collection("messages")
-                        .add(
-                            mapOf(
-                                "text" to "",
-                                "imageUrl" to url.toString(),
-                                "senderUid" to currentUid,
-                                "senderUsername" to currentUsername,
-                                "createdAt" to FieldValue.serverTimestamp()
-                            )
-                        )
-                        .addOnSuccessListener {
-                            db.collection("privateChats").document(chat.id).update(
+            feedback = "Comprimindo foto…"
+            Thread {
+                val imageData = HangoutImageData.encode(context, uri)
+                Handler(Looper.getMainLooper()).post {
+                    if (imageData == null) {
+                        uploadingPhoto = false
+                        feedback = "Não foi possível preparar a foto. Tente outra imagem."
+                    } else {
+                        db.collection("privateChats").document(chat.id).collection("messages")
+                            .add(
                                 mapOf(
-                                    "lastMessage" to "📷 Foto",
-                                    "lastSenderUid" to currentUid,
-                                    "updatedAt" to FieldValue.serverTimestamp()
+                                    "text" to "",
+                                    "imageUrl" to imageData,
+                                    "senderUid" to currentUid,
+                                    "senderUsername" to currentUsername,
+                                    "createdAt" to FieldValue.serverTimestamp()
                                 )
                             )
-                        }
-                        .addOnFailureListener {
-                            feedback = "A foto foi enviada, mas não foi possível criar a mensagem. Confira as regras do Firestore."
-                        }
-                        .addOnCompleteListener { uploadingPhoto = false }
+                            .addOnSuccessListener {
+                                db.collection("privateChats").document(chat.id).update(
+                                    mapOf(
+                                        "lastMessage" to "📷 Foto",
+                                        "lastSenderUid" to currentUid,
+                                        "updatedAt" to FieldValue.serverTimestamp()
+                                    )
+                                )
+                            }
+                            .addOnFailureListener {
+                                feedback = "Não foi possível criar a mensagem. Confira as regras do Firestore."
+                            }
+                            .addOnCompleteListener { uploadingPhoto = false }
+                    }
                 }
-                .addOnFailureListener {
-                    uploadingPhoto = false
-                    feedback = "Não foi possível enviar a foto. Ative o Firebase Storage e publique storage.rules."
-                }
+            }.start()
         }
     }
 
@@ -160,7 +160,7 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
             ) {
                 if (!chat.peerPhotoUrl.isNullOrBlank()) {
                     AsyncImage(
-                        model = chat.peerPhotoUrl,
+                        model = remember(chat.peerPhotoUrl) { HangoutImageData.model(chat.peerPhotoUrl) },
                         contentDescription = "Foto de perfil",
                         modifier = Modifier.fillMaxSize().clip(CircleShape)
                     )
@@ -207,7 +207,7 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
                             }
                             if (!item.imageUrl.isNullOrBlank()) {
                                 AsyncImage(
-                                    model = item.imageUrl,
+                                    model = remember(item.imageUrl) { HangoutImageData.model(item.imageUrl) },
                                     contentDescription = "Foto enviada na conversa",
                                     modifier = Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)),
                                     contentScale = ContentScale.Crop
