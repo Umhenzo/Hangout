@@ -437,16 +437,49 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                     if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startGlobalRecording()
                     else microphonePermission.launch(android.Manifest.permission.RECORD_AUDIO)
                 } else {
-                    try { recorder?.stop() } catch (_: Exception) { }; try { recorder?.release() } catch (_: Exception) { }
-                    recorder = null; recording = false
-                    val file = recordingFile; recordingFile = null
-                    if (file != null) {
-                        sending = true; feedback = "Preparando áudio…"
-                        Thread { val data = HangoutAudioData.encode(file); Handler(Looper.getMainLooper()).post {
-                            if (data == null) { feedback = "Áudio muito grande ou vazio. Grave um trecho mais curto."; sending = false; file.delete() }
-                            else db.collection("globalMessages").add(mapOf("text" to "", "audioData" to data, "uid" to user?.uid, "email" to (user?.email ?: "usuário"), "createdAt" to FieldValue.serverTimestamp()))
-                                .addOnFailureListener { feedback = "Áudio não enviado. Confira as regras do Firestore." }.addOnCompleteListener { sending = false; file.delete() }
-                        } }.start()
+                    feedback = "Finalizando gravação…"
+                    val activeRecorder = recorder
+                    val file = recordingFile
+                    recorder = null
+                    recordingFile = null
+                    recording = false
+                    var stopped = false
+                    try {
+                        activeRecorder?.stop()
+                        stopped = true
+                    } catch (e: Exception) {
+                        feedback = "A gravação falhou ao parar. Tente gravar um áudio mais curto."
+                    } finally {
+                        try { activeRecorder?.reset() } catch (_: Exception) { }
+                        try { activeRecorder?.release() } catch (_: Exception) { }
+                    }
+                    if (file != null && stopped) {
+                        sending = true
+                        feedback = "Preparando áudio…"
+                        Thread {
+                            val data = try { HangoutAudioData.encode(file) } catch (_: Exception) { null }
+                            Handler(Looper.getMainLooper()).post {
+                                if (data == null) {
+                                    feedback = "O áudio ficou vazio ou passou do limite. Grave um trecho mais curto."
+                                    sending = false
+                                    file.delete()
+                                } else {
+                                    feedback = "Enviando áudio…"
+                                    db.collection("globalMessages").add(
+                                        mapOf("text" to "", "audioData" to data, "uid" to user?.uid, "email" to (user?.email ?: "usuário"), "createdAt" to FieldValue.serverTimestamp())
+                                    ).addOnSuccessListener {
+                                        feedback = "Áudio enviado!"
+                                    }.addOnFailureListener { error ->
+                                        feedback = "Falha ao enviar áudio: confira a conexão e as regras do Firestore."
+                                    }.addOnCompleteListener {
+                                        sending = false
+                                        file.delete()
+                                    }
+                                }
+                            }
+                        }.start()
+                    } else if (file != null) {
+                        file.delete()
                     }
                 }
             }) { Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic, contentDescription = if (recording) "Parar gravação" else "Gravar áudio", tint = if (recording) Color(0xFFFF7777) else FbAccent) }
