@@ -19,14 +19,17 @@ Projeto: `hangout-1872a`.
 1. Em **Authentication → Sign-in method**, ative **Email/Password**. O app usa um endereço interno do tipo `nick@users.hangout.invalid`; as pessoas não precisam digitar um e-mail real.
 2. Crie o Firestore Database, se ainda não existir.
 3. Em **Firestore Database → Rules**, publique o conteúdo de `firestore.rules`.
-4. Em **Storage**, crie/habilite o bucket e publique `storage.rules`.
-5. Atualize o app com o APK do workflow GitHub Actions.
+4. Publique `firestore.rules` depois das mudanças e atualize o app com o APK do workflow GitHub Actions.
+
+**Fotos não precisam de Firebase Storage:** o app comprime as imagens e guarda os dados da foto diretamente no Firestore, para evitar exigir um bucket pago por uso.
 
 A configuração no GitHub não publica as regras automaticamente no Console. Para publicar regras a partir da raiz do repositório, use Firebase CLI e o arquivo `firebase.json`.
 
-## Fotos de perfil
+## Fotos de perfil e mensagens
 
-O app envia fotos de perfil para `profilePhotos/{uid}/avatar.jpg`, fotos do chat global para `globalPhotos/{uid}/...` e imagens privadas para `chatPhotos/{chatId}/{uid}/...`. O bucket Cloud Storage precisa estar criado e acessível. O Firebase exige o plano de faturamento Blaze para criar/usar Cloud Storage em projetos atuais; é um plano pago por uso, então não o ative sem o titular da conta revisar custos e alertas de orçamento.
+As fotos de perfil, do chat global e das conversas privadas são convertidas para JPEG e comprimidas (até aproximadamente 450 KB) e salvas no Cloud Firestore. Assim, o envio de fotos não depende do Firebase Storage nem da ativação do plano Blaze para esse serviço.
+
+Como o Firestore tem um limite de 1 MiB por documento, imagens muito grandes são reduzidas/comprimidas; se não couberem, o app avisa que não conseguiu preparar a foto. Esse método serve para um grupo pequeno, mas fotos aumentam o uso de armazenamento e de transferência de dados. Confira as cotas gratuitas no painel Usage do Firestore.
 
 ## Recuperação de senha
 
@@ -45,11 +48,11 @@ A tela de salas está conectada à SDK Android do LiveKit. Para chamadas reais:
    `firebase functions:secrets:set LIVEKIT_API_SECRET`
 4. Crie `functions/.env.hangout-1872a` com uma linha `LIVEKIT_URL=wss://SEU-SERVIDOR-LIVEKIT`. Use o URL real do seu projeto; não publique chaves secretas no GitHub.
 5. Implante as funções e regras:
-   `firebase deploy --project hangout-1872a --only functions,firestore:rules,storage`
+   `firebase deploy --project hangout-1872a --only functions,firestore:rules`
 
 A função `createVoiceToken` cria tokens temporários para as quatro salas permitidas. A chave secreta do LiveKit fica no servidor, nunca dentro do APK.
 
-**Atenção sobre custos:** Cloud Functions e Cloud Storage podem exigir o plano Blaze de faturamento por uso. Configure alertas de orçamento e confira os preços antes de habilitar o faturamento.
+**Atenção sobre custos:** a implantação de Cloud Functions pode exigir o plano Blaze de faturamento por uso. As fotos do Hangout usam Firestore, não Cloud Storage. Confira os preços e peça ao responsável pela conta para revisar o faturamento antes de ativar o Blaze.
 
 ## Compilar
 
