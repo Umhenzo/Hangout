@@ -6,7 +6,8 @@ App Android de conversas em Kotlin/Jetpack Compose, com visual escuro em tons de
 
 - Cadastro e login por nick e senha (sem pedir e-mail real na interface).
 - Pesquisa de usuário por nick e conversas privadas em tempo real.
-- Chat global em tempo real.
+- Chat global em tempo real, com mensagens de texto e fotos.
+- Mensagens privadas com envio de texto e fotos para os participantes da conversa.
 - Perfil com foto, status e presença aproximada online/offline.
 - Código de recuperação que pode redefinir a senha sem e-mail real (requer Firebase Functions publicadas).
 - Salas de voz LiveKit com controles de microfone (requer LiveKit Cloud/self-hosted e Firebase Functions publicadas).
@@ -25,13 +26,13 @@ A configuração no GitHub não publica as regras automaticamente no Console. Pa
 
 ## Fotos de perfil
 
-O app envia fotos para `profilePhotos/{uid}/avatar.jpg`. O bucket Cloud Storage precisa estar criado e acessível. O Firebase exige o plano de faturamento Blaze para criar/usar Cloud Storage em projetos atuais; é um plano pago por uso, então não o ative sem o titular da conta revisar custos e alertas de orçamento.
+O app envia fotos de perfil para `profilePhotos/{uid}/avatar.jpg`, fotos do chat global para `globalPhotos/{uid}/...` e imagens privadas para `chatPhotos/{chatId}/{uid}/...`. O bucket Cloud Storage precisa estar criado e acessível. O Firebase exige o plano de faturamento Blaze para criar/usar Cloud Storage em projetos atuais; é um plano pago por uso, então não o ative sem o titular da conta revisar custos e alertas de orçamento.
 
 ## Recuperação de senha
 
 Na aba **Perfil**, use **Gerar código de recuperação** e salve o código exibido. Ele só é mostrado uma vez. Se esquecer a senha, na tela de login toque em **Esqueci a senha**, informe nick, código e nova senha. Depois da recuperação, o código antigo é invalidado e um novo código é exibido.
 
-Isso exige implantar a função `recoverAccount`. Sem a função publicada e sem um código salvo antes de perder a senha, a recuperação não estará disponível.
+Isso exige implantar as funções `createRecoveryCode` e `recoverAccount`; os hashes dos códigos ficam em uma coleção de acesso exclusivo ao servidor, não nos perfis públicos. Sem a função publicada e sem um código salvo antes de perder a senha, a recuperação não estará disponível.
 
 ## Salas de voz (LiveKit)
 
