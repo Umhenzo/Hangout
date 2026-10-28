@@ -91,7 +91,7 @@ fun DirectCallControls(chatId: String, peerUid: String, peerUsername: String) {
                     FirebaseFunctions.getInstance().getHttpsCallable("createVoiceToken")
                         .call(mapOf("roomName" to "direct_$chatId"))
                         .addOnSuccessListener { result ->
-                            val payload = result.data as? Map<*, *>
+                            val payload = result.getData() as? Map<*, *>
                             val url = payload?.get("url") as? String
                             val token = payload?.get("token") as? String
                             if (url.isNullOrBlank() || token.isNullOrBlank()) {
