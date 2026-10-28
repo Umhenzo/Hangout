@@ -131,6 +131,67 @@ service cloud.firestore {
           ]);
         allow update, delete: if false;
       }
+
+      match /calls/{callId} {
+        allow read: if callId == 'active' && isPrivateChatMember(chatId);
+
+        allow create: if callId == 'active'
+          && isPrivateChatMember(chatId)
+          && request.resource.data.keys().hasOnly([
+            'callerUid', 'calleeUid', 'status', 'roomName', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.callerUid == request.auth.uid
+          && request.resource.data.calleeUid is string
+          && request.resource.data.calleeUid != request.auth.uid
+          && get(/databases/$(database)/documents/privateChats/$(chatId)).data.members
+            .hasAll([request.auth.uid, request.resource.data.calleeUid])
+          && request.resource.data.status == 'ringing'
+          && request.resource.data.roomName == 'direct_' + chatId;
+
+        allow update: if callId == 'active'
+          && isPrivateChatMember(chatId)
+          && request.resource.data.keys().hasOnly([
+            'callerUid', 'calleeUid', 'status', 'roomName', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.callerUid is string
+          && request.resource.data.calleeUid is string
+          && request.resource.data.calleeUid != request.resource.data.callerUid
+          && get(/databases/$(database)/documents/privateChats/$(chatId)).data.members
+            .hasAll([request.resource.data.callerUid, request.resource.data.calleeUid])
+          && request.resource.data.roomName == 'direct_' + chatId
+          && (
+            (
+              resource.data.status == 'ringing'
+              && (
+                (request.auth.uid == resource.data.calleeUid
+                  && request.resource.data.status in ['active', 'rejected'])
+                || (request.auth.uid == resource.data.callerUid
+                  && request.resource.data.status == 'ended')
+              )
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'updatedAt'])
+            )
+            || (
+              resource.data.status == 'active'
+              && request.auth.uid in [resource.data.callerUid, resource.data.calleeUid]
+              && request.resource.data.status == 'ended'
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'updatedAt'])
+            )
+            || (
+              resource.data.status in ['ended', 'rejected']
+              && request.resource.data.status == 'ringing'
+              && request.resource.data.callerUid == request.auth.uid
+              && request.resource.data.calleeUid != request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly([
+                  'callerUid', 'calleeUid', 'status', 'roomName', 'createdAt', 'updatedAt'
+                ])
+            )
+          );
+
+        allow delete: if false;
+      }
     }
 
     match /{document=**} {
