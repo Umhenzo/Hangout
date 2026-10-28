@@ -271,7 +271,9 @@ private fun ChatsTab(
                             peerUsername = profile.username,
                             members = members,
                             lastMessage = existing.getString("lastMessage") ?: "",
-                            updatedAt = existing.getTimestamp("updatedAt")
+                            updatedAt = existing.getTimestamp("updatedAt"),
+                            peerPhotoUrl = profile.photoUrl,
+                            peerOnline = profile.isOnline
                         )
                     )
                 } else {
@@ -292,7 +294,9 @@ private fun ChatsTab(
                                     ChatSummary(
                                         chatId, profile.uid, profile.username, members,
                                         concurrent.getString("lastMessage") ?: "",
-                                        concurrent.getTimestamp("updatedAt")
+                                        concurrent.getTimestamp("updatedAt"),
+                                        profile.photoUrl,
+                                        profile.isOnline
                                     )
                                 )
                             } else onNotice("Não foi possível iniciar a conversa. Confira as regras do Firestore.")
@@ -338,7 +342,7 @@ private fun ChatsTab(
                         ProfileAvatar(profile.username, profile.photoUrl, 44)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("@${profile.username}", color = MainText, fontWeight = FontWeight.SemiBold)
-                            Text("Toque para conversar", color = Muted, fontSize = 12.sp)
+                            Text(if (profile.isOnline) "● Online agora" else "Toque para conversar", color = Muted, fontSize = 12.sp)
                         }
                         Icon(Icons.Default.Chat, contentDescription = "Iniciar conversa", tint = Accent)
                     }
