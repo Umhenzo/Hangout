@@ -203,6 +203,11 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
                 Text("@${chat.peerUsername}", color = PrivateText, fontWeight = FontWeight.Bold)
                 Text(if (chat.peerOnline) "● Online agora" else "Conversa privada", color = PrivateMuted, fontSize = 11.sp)
             }
+            DirectCallControls(
+                chatId = chat.id,
+                peerUid = chat.peerUid,
+                peerUsername = chat.peerUsername
+            )
         }
 
         if (messages.isEmpty() && feedback.isBlank()) {
