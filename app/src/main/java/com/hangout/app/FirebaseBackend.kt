@@ -28,6 +28,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import coil.compose.AsyncImage
 
@@ -43,7 +44,25 @@ fun FirebaseGate(content: @Composable () -> Unit) {
     val auth = remember { FirebaseAuth.getInstance() }
     var user by remember { mutableStateOf(auth.currentUser) }
     DisposableEffect(auth) {
-        val listener = FirebaseAuth.AuthStateListener { user = it.currentUser }
+        val listener = FirebaseAuth.AuthStateListener { state ->
+            val signedInUser = state.currentUser
+            user = signedInUser
+            if (signedInUser != null) {
+                val nick = signedInUser.email?.substringBefore("@")
+                if (!nick.isNullOrBlank()) {
+                    FirebaseFirestore.getInstance().collection("profiles").document(signedInUser.uid)
+                        .set(
+                            mapOf(
+                                "uid" to signedInUser.uid,
+                                "username" to nick,
+                                "isOnline" to true,
+                                "lastSeen" to FieldValue.serverTimestamp()
+                            ),
+                            SetOptions.merge()
+                        )
+                }
+            }
+        }
         auth.addAuthStateListener(listener)
         onDispose { auth.removeAuthStateListener(listener) }
     }
