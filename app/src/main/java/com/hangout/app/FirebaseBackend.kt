@@ -358,7 +358,6 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                             val email = doc.getString("email") ?: "usuário"
                             messages.add(GlobalChatMessage(doc.id, uid, email, text, doc.getString("imageUrl"), doc.getString("audioData")))
                         }
-                        feedback = ""
                         messages.map { it.uid }.distinct().forEach { senderId ->
                             db.collection("profiles").document(senderId).get().addOnSuccessListener { profile ->
                                 val photo = profile.getString("photoUrl")
