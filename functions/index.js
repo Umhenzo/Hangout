@@ -61,7 +61,34 @@ exports.createVoiceToken = onCall(
     }
 
     const roomName = request.data && request.data.roomName;
-    if (typeof roomName !== "string" || !ALLOWED_ROOMS.has(roomName)) {
+    let allowedRoom = typeof roomName === "string" && ALLOWED_ROOMS.has(roomName);
+
+    // Chamadas privadas usam uma sala derivada do ID da conversa.
+    // Só emite tokens quando a chamada está ativa e o usuário pertence à conversa.
+    if (typeof roomName === "string" && roomName.startsWith("direct_")) {
+      const chatId = roomName.slice("direct_".length);
+      if (!chatId || chatId.length > 180) {
+        throw new HttpsError("invalid-argument", "Conversa inválida.");
+      }
+      const chatRef = db.collection("privateChats").doc(chatId);
+      const chatSnapshot = await chatRef.get();
+      const members = chatSnapshot.exists ? chatSnapshot.get("members") : null;
+      if (!Array.isArray(members) || members.length !== 2 || !members.includes(request.auth.uid)) {
+        throw new HttpsError("permission-denied", "Você não pertence a esta conversa.");
+      }
+
+      const callSnapshot = await chatRef.collection("calls").doc("active").get();
+      const call = callSnapshot.exists ? callSnapshot.data() : null;
+      if (!call || call.status !== "active" || call.roomName !== roomName
+          || !members.includes(call.callerUid) || !members.includes(call.calleeUid)
+          || call.callerUid === call.calleeUid
+          || ![call.callerUid, call.calleeUid].includes(request.auth.uid)) {
+        throw new HttpsError("failed-precondition", "Não existe uma chamada ativa nesta conversa.");
+      }
+      allowedRoom = true;
+    }
+
+    if (!allowedRoom) {
       throw new HttpsError("invalid-argument", "Sala inválida.");
     }
 
