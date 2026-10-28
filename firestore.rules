@@ -18,16 +18,13 @@ service cloud.firestore {
         && ownsUsername(data.username)
         && data.keys().hasOnly([
           'uid', 'username', 'createdAt', 'photoUrl', 'status', 'country',
-          'isOnline', 'lastSeen', 'recoveryHash'
+          'isOnline', 'lastSeen'
         ])
         && (!('photoUrl' in data) || data.photoUrl is string)
         && (!('status' in data) || (data.status is string && data.status.size() <= 60))
         && (!('country' in data) || (data.country is string && data.country.size() <= 80))
         && (!('isOnline' in data) || data.isOnline is bool)
-        && (!('recoveryHash' in data) || (
-          data.recoveryHash is string
-          && data.recoveryHash.matches('^[a-f0-9]{64}$')
-        ));
+;
     }
 
     function isPrivateChatMember(chatId) {
