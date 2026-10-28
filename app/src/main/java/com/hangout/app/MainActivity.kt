@@ -21,6 +21,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,7 +33,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
-import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.functions.FirebaseFunctions
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -390,6 +392,7 @@ private fun RoomsTab(modifier: Modifier) {
 private fun ProfileTab(modifier: Modifier) {
     val user = FirebaseAuth.getInstance().currentUser
     val db = remember { FirebaseFirestore.getInstance() }
+    val context = LocalContext.current.applicationContext
     val uid = user?.uid
     val defaultUsername = user?.email?.substringBefore("@") ?: "usuário"
     var username by remember { mutableStateOf(defaultUsername) }
@@ -420,23 +423,21 @@ private fun ProfileTab(modifier: Modifier) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && uid != null) {
             busy = true
-            notice = ""
-            val imageRef = FirebaseStorage.getInstance().reference.child("profilePhotos/" + uid + "/avatar.jpg")
-            imageRef.putFile(uri)
-                .continueWithTask { task ->
-                    if (!task.isSuccessful) throw task.exception ?: Exception("Upload falhou")
-                    imageRef.downloadUrl
+            notice = "Comprimindo foto…"
+            Thread {
+                val imageData = HangoutImageData.encode(context, uri)
+                Handler(Looper.getMainLooper()).post {
+                    if (imageData == null) {
+                        busy = false
+                        notice = "Não foi possível preparar a foto. Tente outra imagem."
+                    } else {
+                        db.collection("profiles").document(uid).update("photoUrl", imageData)
+                            .addOnSuccessListener { notice = "Foto de perfil atualizada." }
+                            .addOnFailureListener { notice = "Não foi possível salvar. Confira as regras do Firestore." }
+                            .addOnCompleteListener { busy = false }
+                    }
                 }
-                .addOnSuccessListener { url ->
-                    db.collection("profiles").document(uid).update("photoUrl", url.toString())
-                        .addOnSuccessListener { notice = "Foto de perfil atualizada." }
-                        .addOnFailureListener { notice = "Foto enviada, mas o perfil não foi atualizado. Verifique as regras do Firestore." }
-                        .addOnCompleteListener { busy = false }
-                }
-                .addOnFailureListener {
-                    busy = false
-                    notice = "Falha no upload. Ative o Firebase Storage e publique storage.rules."
-                }
+            }.start()
         }
     }
 
@@ -566,7 +567,7 @@ private fun ProfileAvatar(username: String, photoUrl: String?, size: Int) {
     ) {
         if (!photoUrl.isNullOrBlank()) {
             AsyncImage(
-                model = photoUrl,
+                model = remember(photoUrl) { HangoutImageData.model(photoUrl) },
                 contentDescription = "Foto de perfil",
                 modifier = Modifier.fillMaxSize().clip(CircleShape)
             )
