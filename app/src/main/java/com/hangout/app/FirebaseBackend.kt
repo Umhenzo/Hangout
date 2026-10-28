@@ -12,6 +12,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -293,7 +296,17 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
     var feedback by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var uploadingPhoto by remember { mutableStateOf(false) }
+    var recording by remember { mutableStateOf(false) }
+    var recorder by remember { mutableStateOf<android.media.MediaRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<java.io.File?>(null) }
 
+    fun startGlobalRecording() {
+        try { val (r, file) = HangoutAudioData.startRecording(context); recorder = r; recordingFile = file; recording = true; feedback = "Gravando áudio… toque em parar para enviar." }
+        catch (_: Exception) { feedback = "Não foi possível iniciar a gravação. Confira a permissão do microfone." }
+    }
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startGlobalRecording() else feedback = "O Hangout precisa do microfone para gravar áudio."
+    }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val currentUser = auth.currentUser
         if (uri != null && currentUser != null && !uploadingPhoto && !sending) {
@@ -342,9 +355,18 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                             val text = doc.getString("text") ?: return@forEach
                             val uid = doc.getString("uid") ?: ""
                             val email = doc.getString("email") ?: "usuário"
-                            messages.add(GlobalChatMessage(doc.id, uid, email, text, doc.getString("imageUrl")))
+                            messages.add(GlobalChatMessage(doc.id, uid, email, text, doc.getString("imageUrl"), doc.getString("audioData")))
                         }
                         feedback = ""
+                        messages.map { it.uid }.distinct().forEach { senderId ->
+                            db.collection("profiles").document(senderId).get().addOnSuccessListener { profile ->
+                                val photo = profile.getString("photoUrl")
+                                val status = profile.getString("status")
+                                val updated = messages.map { item -> if (item.uid == senderId) item.copy(photoUrl = photo, status = status) else item }
+                                messages.clear()
+                                messages.addAll(updated)
+                            }
+                        }
                     }
                 }
             onDispose { registration.remove() }
@@ -377,22 +399,17 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
         ) {
             items(messages, key = { it.id }) { item ->
                 val mine = item.uid == user?.uid
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
-                ) {
-                    Column(
-                        Modifier.widthIn(max = 320.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(if (mine) Color(0xFF3C3C3C) else FbPanel)
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        Text(
-                            if (mine) "Você" else "@" + item.email.substringBefore("@"),
-                            color = FbMint,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom) {
+                    if (!mine) {
+                        Box(Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF3A3A3A)), contentAlignment = Alignment.Center) {
+                            if (!item.photoUrl.isNullOrBlank()) AsyncImage(model = remember(item.photoUrl) { HangoutImageData.model(item.photoUrl) }, contentDescription = "Foto de perfil", modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                            else Text(item.email.substringBefore("@").take(1).uppercase(), color = FbText, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Column(Modifier.widthIn(max = 320.dp).clip(RoundedCornerShape(18.dp)).background(if (mine) Color(0xFF3C3C3C) else FbPanel).padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(if (mine) "Você" else "@" + item.email.substringBefore("@"), color = FbMint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        if (!mine && !item.status.isNullOrBlank() && item.status != "Disponível") Text(item.status, color = FbMuted, fontSize = 10.sp)
                         Spacer(Modifier.height(3.dp))
                         if (!item.imageUrl.isNullOrBlank()) {
                             AsyncImage(
@@ -403,6 +420,7 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                             )
                             if (item.text.isNotBlank()) Spacer(Modifier.height(6.dp))
                         }
+                        if (!item.audioData.isNullOrBlank()) OutlinedButton(onClick = { HangoutAudioData.play(context, item.audioData) }) { Icon(Icons.Default.PlayArrow, contentDescription = "Reproduzir áudio"); Spacer(Modifier.width(6.dp)); Text("Ouvir áudio") }
                         if (item.text.isNotBlank()) Text(item.text, color = FbText, fontSize = 15.sp)
                     }
                 }
@@ -412,17 +430,32 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
             Text(feedback, color = Color(0xFFFFB3B3), fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                enabled = !sending && !uploadingPhoto,
-                onClick = { photoPicker.launch("image/*") }
-            ) { Icon(Icons.Default.Image, contentDescription = "Enviar foto", tint = FbAccent) }
+            IconButton(enabled = !sending && !uploadingPhoto && !recording, onClick = { photoPicker.launch("image/*") }) { Icon(Icons.Default.Image, contentDescription = "Enviar foto", tint = FbAccent) }
+            IconButton(enabled = !sending && !uploadingPhoto, onClick = {
+                if (!recording) {
+                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startGlobalRecording()
+                    else microphonePermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                } else {
+                    try { recorder?.stop() } catch (_: Exception) { }; try { recorder?.release() } catch (_: Exception) { }
+                    recorder = null; recording = false
+                    val file = recordingFile; recordingFile = null
+                    if (file != null) {
+                        sending = true; feedback = "Preparando áudio…"
+                        Thread { val data = HangoutAudioData.encode(file); Handler(Looper.getMainLooper()).post {
+                            if (data == null) { feedback = "Áudio muito grande ou vazio. Grave um trecho mais curto."; sending = false; file.delete() }
+                            else db.collection("globalMessages").add(mapOf("text" to "", "audioData" to data, "uid" to user?.uid, "email" to (user?.email ?: "usuário"), "createdAt" to FieldValue.serverTimestamp()))
+                                .addOnFailureListener { feedback = "Áudio não enviado. Confira as regras do Firestore." }.addOnCompleteListener { sending = false; file.delete() }
+                        } }.start()
+                    }
+                }
+            }) { Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic, contentDescription = if (recording) "Parar gravação" else "Gravar áudio", tint = if (recording) Color(0xFFFF7777) else FbAccent) }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { if (it.length <= 2000) draft = it },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Escreva uma mensagem…") },
                 singleLine = true,
-                enabled = !sending && !uploadingPhoto,
+                enabled = !sending && !uploadingPhoto && !recording,
                 shape = RoundedCornerShape(22.dp)
             )
             Spacer(Modifier.width(8.dp))
@@ -472,5 +505,8 @@ private data class GlobalChatMessage(
     val uid: String,
     val email: String,
     val text: String,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val audioData: String? = null,
+    val photoUrl: String? = null,
+    val status: String? = null
 )
