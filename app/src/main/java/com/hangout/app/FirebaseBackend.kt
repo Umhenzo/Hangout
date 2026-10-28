@@ -469,7 +469,7 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                                     ).addOnSuccessListener {
                                         feedback = "Áudio enviado!"
                                     }.addOnFailureListener { error ->
-                                        feedback = "Falha ao enviar áudio: confira a conexão e as regras do Firestore."
+                                        feedback = "Falha ao enviar áudio: ${error.message ?: error.javaClass.simpleName}"
                                     }.addOnCompleteListener {
                                         sending = false
                                         file.delete()
