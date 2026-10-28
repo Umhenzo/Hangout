@@ -3,7 +3,6 @@ package com.hangout.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,8 +20,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.functions.FirebaseFunctions
-import java.security.MessageDigest
-import java.security.SecureRandom
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -219,7 +216,7 @@ private fun FirebaseAuthScreen() {
                                     "newPassword" to recoveryPassword
                                 ))
                                 .addOnSuccessListener { result ->
-                                    val data = result.data as? Map<*, *>
+                                    val data = result.getData() as? Map<*, *>
                                     recoveryCodeResult = data?.get("newRecoveryCode") as? String
                                     recoveryBusy = false
                                     if (recoveryCodeResult != null) {
