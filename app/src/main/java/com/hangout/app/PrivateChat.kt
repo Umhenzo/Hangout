@@ -12,6 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +25,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import android.os.Handler
 import android.os.Looper
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.MediaRecorder
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,7 +55,8 @@ private data class PrivateMessage(
     val senderUid: String,
     val senderUsername: String,
     val text: String,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val audioData: String? = null
 )
 
 private val PrivateBg = Color(0xFF171717)
@@ -71,6 +79,26 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
     var feedback by remember(chat.id) { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var uploadingPhoto by remember { mutableStateOf(false) }
+    var recording by remember { mutableStateOf(false) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<java.io.File?>(null) }
+
+    fun startVoiceRecording() {
+        try {
+            val (activeRecorder, file) = HangoutAudioData.startRecording(context)
+            recorder = activeRecorder
+            recordingFile = file
+            recording = true
+            feedback = "Gravando áudio… toque em parar para enviar."
+        } catch (_: Exception) {
+            recording = false
+            feedback = "Não foi possível iniciar a gravação. Confira a permissão do microfone."
+        }
+    }
+
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoiceRecording() else feedback = "O Hangout precisa do microfone para gravar áudio."
+    }
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && currentUid != null && !sending && !uploadingPhoto) {
@@ -135,7 +163,8 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
                                     senderUid = document.getString("senderUid") ?: "",
                                     senderUsername = document.getString("senderUsername") ?: "usuário",
                                     text = text,
-                                    imageUrl = document.getString("imageUrl")
+                                    imageUrl = document.getString("imageUrl"),
+                                    audioData = document.getString("audioData")
                                 )
                             )
                         }
@@ -145,6 +174,8 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
             onDispose { registration.remove() }
         }
     }
+
+    DisposableEffect(chat.id) { onDispose { try { recorder?.stop() } catch (_: Exception) { }; try { recorder?.release() } catch (_: Exception) { } } }
 
     Column(Modifier.fillMaxSize().background(PrivateBg)) {
         Row(
@@ -214,6 +245,13 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
                                 )
                                 if (item.text.isNotBlank()) Spacer(Modifier.height(6.dp))
                             }
+                            if (!item.audioData.isNullOrBlank()) {
+                                OutlinedButton(onClick = { HangoutAudioData.play(context, item.audioData) }) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = "Reproduzir áudio")
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Ouvir áudio")
+                                }
+                            }
                             if (item.text.isNotBlank()) Text(item.text, color = PrivateText, fontSize = 15.sp)
                         }
                     }
@@ -230,16 +268,61 @@ fun PrivateChatScreen(chat: ChatSummary, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                enabled = !sending && !uploadingPhoto,
+                enabled = !sending && !uploadingPhoto && !recording,
                 onClick = { photoPicker.launch("image/*") }
             ) { Icon(Icons.Default.Image, contentDescription = "Enviar foto", tint = PrivateAccent) }
+            IconButton(
+                enabled = !sending && !uploadingPhoto,
+                onClick = {
+                    if (!recording) {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startVoiceRecording()
+                        else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                    } else {
+                        try { recorder?.stop() } catch (_: Exception) { }
+                        try { recorder?.release() } catch (_: Exception) { }
+                        recorder = null
+                        recording = false
+                        val file = recordingFile
+                        recordingFile = null
+                        if (file != null) {
+                            sending = true
+                            feedback = "Preparando áudio…"
+                            Thread {
+                                val data = HangoutAudioData.encode(file)
+                                Handler(Looper.getMainLooper()).post {
+                                    if (data == null) {
+                                        feedback = "Áudio muito grande ou vazio. Grave um trecho mais curto."
+                                        sending = false
+                                        file.delete()
+                                    } else {
+                                        db.collection("privateChats").document(chat.id).collection("messages")
+                                            .add(mapOf("text" to "", "audioData" to data, "senderUid" to currentUid,
+                                                "senderUsername" to currentUsername, "createdAt" to FieldValue.serverTimestamp()))
+                                            .addOnSuccessListener {
+                                                db.collection("privateChats").document(chat.id).update(mapOf(
+                                                    "lastMessage" to "🎤 Áudio", "lastSenderUid" to currentUid,
+                                                    "updatedAt" to FieldValue.serverTimestamp()))
+                                            }
+                                            .addOnFailureListener { feedback = "Áudio não enviado. Confira as regras do Firestore." }
+                                            .addOnCompleteListener { sending = false; file.delete() }
+                                    }
+                                }
+                            }.start()
+                        }
+                    }
+                }
+            ) {
+                Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic,
+                    contentDescription = if (recording) "Parar gravação" else "Gravar áudio",
+                    tint = if (recording) Color(0xFFFF7777) else PrivateAccent)
+            }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { if (it.length <= 2000) draft = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Mensagem…") },
+                placeholder = { Text(if (recording) "Gravando áudio…" else "Mensagem…") },
                 singleLine = true,
-                enabled = !sending && !uploadingPhoto,
+                enabled = !sending && !uploadingPhoto && !recording,
                 shape = RoundedCornerShape(24.dp)
             )
             IconButton(
