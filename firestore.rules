@@ -23,8 +23,7 @@ service cloud.firestore {
         && (!('photoUrl' in data) || data.photoUrl is string)
         && (!('status' in data) || (data.status is string && data.status.size() <= 60))
         && (!('country' in data) || (data.country is string && data.country.size() <= 80))
-        && (!('isOnline' in data) || data.isOnline is bool)
-;
+        && (!('isOnline' in data) || data.isOnline is bool);
     }
 
     function isPrivateChatMember(chatId) {
