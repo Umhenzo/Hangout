@@ -2,6 +2,7 @@ package com.hangout.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -266,6 +267,7 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
     val messages = remember { mutableStateListOf<GlobalChatMessage>() }
     var draft by remember { mutableStateOf("") }
     var feedback by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
 
     DisposableEffect(user?.uid) {
         if (user == null) {
@@ -293,9 +295,25 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
         }
     }
 
-    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text("Pra todo mundo", color = FbText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Mensagens sincronizadas em tempo real", color = FbMuted, fontSize = 12.sp)
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = FbPanel,
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF3A3A3A)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("G", color = FbText, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text("Chat global", color = FbText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("Mensagens para toda a comunidade", color = FbMuted, fontSize = 11.sp)
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
@@ -303,45 +321,76 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
         ) {
             items(messages, key = { it.id }) { item ->
                 val mine = item.uid == user?.uid
-                Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                        .background(if (mine) Color(0xFF39335E) else FbPanel).padding(12.dp)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
                 ) {
-                    Text(if (mine) "Você" else item.email.substringBefore("@"), color = FbMint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(item.text, color = FbText)
+                    Column(
+                        Modifier.widthIn(max = 320.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(if (mine) Color(0xFF3C3C3C) else FbPanel)
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            if (mine) "Você" else "@" + item.email.substringBefore("@"),
+                            color = FbMint,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(item.text, color = FbText, fontSize = 15.sp)
+                    }
                 }
             }
         }
-        if (feedback.isNotBlank()) Text(feedback, color = Color(0xFFFFB3B3), fontSize = 12.sp)
+        if (feedback.isNotBlank()) {
+            Text(feedback, color = Color(0xFFFFB3B3), fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
-                value = draft, onValueChange = { if (it.length <= 2000) draft = it },
-                modifier = Modifier.weight(1f), placeholder = { Text("Fale com todo mundo…") },
-                singleLine = true
+                value = draft,
+                onValueChange = { if (it.length <= 2000) draft = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Escreva uma mensagem…") },
+                singleLine = true,
+                enabled = !sending,
+                shape = RoundedCornerShape(22.dp)
             )
-            IconButton(onClick = {
-                val text = draft.trim()
-                val currentUser = auth.currentUser
-                if (text.isNotEmpty() && currentUser != null) {
-                    db.collection("globalMessages").add(
-                        mapOf(
-                            "text" to text,
-                            "uid" to currentUser.uid,
-                            "email" to (currentUser.email ?: "usuário"),
-                            "createdAt" to FieldValue.serverTimestamp()
-                        )
-                    ).addOnFailureListener {
-                        feedback = "Falha ao enviar. Confira se o Firestore e as regras estão configurados."
+            Spacer(Modifier.width(8.dp))
+            FilledIconButton(
+                enabled = !sending && draft.isNotBlank(),
+                onClick = {
+                    val text = draft.trim()
+                    val currentUser = auth.currentUser
+                    if (text.isNotEmpty() && currentUser != null && !sending) {
+                        sending = true
+                        db.collection("globalMessages").add(
+                            mapOf(
+                                "text" to text,
+                                "uid" to currentUser.uid,
+                                "email" to (currentUser.email ?: "usuário"),
+                                "createdAt" to FieldValue.serverTimestamp()
+                            )
+                        ).addOnSuccessListener {
+                            draft = ""
+                            feedback = ""
+                        }.addOnFailureListener {
+                            feedback = "Falha ao enviar. Confira as regras do Firestore e sua conexão."
+                        }.addOnCompleteListener {
+                            sending = false
+                        }
                     }
-                    draft = ""
-                }
-            }) {
-                Icon(Icons.Default.Send, contentDescription = "Enviar", tint = FbAccent)
+                },
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = Color(0xFFD0D0D0),
+                    contentColor = Color(0xFF171717)
+                )
+            ) {
+                Icon(Icons.Default.Send, contentDescription = "Enviar")
             }
         }
     }
 }
-
 @Composable
 fun FirebaseSignOutButton() {
     TextButton(onClick = { FirebaseAuth.getInstance().signOut() }) {
