@@ -1,6 +1,8 @@
 package com.hangout.app
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,12 +11,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -24,6 +28,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.storage.FirebaseStorage
+import coil.compose.AsyncImage
 
 private val FbBg = Color(0xFF171717)
 private val FbPanel = Color(0xFF242424)
@@ -264,6 +270,41 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
     var draft by remember { mutableStateOf("") }
     var feedback by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var uploadingPhoto by remember { mutableStateOf(false) }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val currentUser = auth.currentUser
+        if (uri != null && currentUser != null && !uploadingPhoto && !sending) {
+            uploadingPhoto = true
+            feedback = ""
+            val imageRef = FirebaseStorage.getInstance().reference
+                .child("globalPhotos/" + currentUser.uid + "/" + System.currentTimeMillis() + ".jpg")
+            imageRef.putFile(uri)
+                .continueWithTask { task ->
+                    if (!task.isSuccessful) throw task.exception ?: Exception("Upload falhou")
+                    imageRef.downloadUrl
+                }
+                .addOnSuccessListener { url ->
+                    db.collection("globalMessages").add(
+                        mapOf(
+                            "text" to "",
+                            "imageUrl" to url.toString(),
+                            "uid" to currentUser.uid,
+                            "email" to (currentUser.email ?: "usuário"),
+                            "createdAt" to FieldValue.serverTimestamp()
+                        )
+                    ).addOnSuccessListener {
+                        feedback = ""
+                    }.addOnFailureListener {
+                        feedback = "A foto foi enviada, mas a mensagem não foi salva. Confira as regras do Firestore."
+                    }.addOnCompleteListener { uploadingPhoto = false }
+                }
+                .addOnFailureListener {
+                    uploadingPhoto = false
+                    feedback = "Não foi possível enviar a foto. Ative o Storage e publique storage.rules."
+                }
+        }
+    }
 
     DisposableEffect(user?.uid) {
         if (user == null) {
@@ -282,7 +323,7 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                             val text = doc.getString("text") ?: return@forEach
                             val uid = doc.getString("uid") ?: ""
                             val email = doc.getString("email") ?: "usuário"
-                            messages.add(GlobalChatMessage(doc.id, uid, email, text))
+                            messages.add(GlobalChatMessage(doc.id, uid, email, text, doc.getString("imageUrl")))
                         }
                         feedback = ""
                     }
@@ -334,7 +375,16 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(3.dp))
-                        Text(item.text, color = FbText, fontSize = 15.sp)
+                        if (!item.imageUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = item.imageUrl,
+                                contentDescription = "Foto enviada ao chat global",
+                                modifier = Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            if (item.text.isNotBlank()) Spacer(Modifier.height(6.dp))
+                        }
+                        if (item.text.isNotBlank()) Text(item.text, color = FbText, fontSize = 15.sp)
                     }
                 }
             }
@@ -343,18 +393,22 @@ fun FirebaseGlobalChat(modifier: Modifier = Modifier) {
             Text(feedback, color = Color(0xFFFFB3B3), fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                enabled = !sending && !uploadingPhoto,
+                onClick = { photoPicker.launch("image/*") }
+            ) { Icon(Icons.Default.Image, contentDescription = "Enviar foto", tint = FbAccent) }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { if (it.length <= 2000) draft = it },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Escreva uma mensagem…") },
                 singleLine = true,
-                enabled = !sending,
+                enabled = !sending && !uploadingPhoto,
                 shape = RoundedCornerShape(22.dp)
             )
             Spacer(Modifier.width(8.dp))
             FilledIconButton(
-                enabled = !sending && draft.isNotBlank(),
+                enabled = !sending && !uploadingPhoto && draft.isNotBlank(),
                 onClick = {
                     val text = draft.trim()
                     val currentUser = auth.currentUser
@@ -398,5 +452,6 @@ private data class GlobalChatMessage(
     val id: String,
     val uid: String,
     val email: String,
-    val text: String
+    val text: String,
+    val imageUrl: String? = null
 )
