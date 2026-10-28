@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -391,6 +393,8 @@ private fun ProfileTab(modifier: Modifier) {
     var online by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
+    var recoveryCodeToShow by remember { mutableStateOf<String?>(null) }
+    var recoveryWorking by remember { mutableStateOf(false) }
 
     DisposableEffect(uid) {
         if (uid == null) {
@@ -432,7 +436,7 @@ private fun ProfileTab(modifier: Modifier) {
     }
 
     Column(
-        modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
@@ -489,6 +493,27 @@ private fun ProfileTab(modifier: Modifier) {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Salvar status") }
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        if (uid != null) {
+                            recoveryWorking = true
+                            val code = generateRecoveryCode()
+                            val hash = hashRecoveryCode(code)
+                            db.collection("profiles").document(uid).update("recoveryHash", hash)
+                                .addOnSuccessListener {
+                                    recoveryCodeToShow = code
+                                    notice = "Guarde seu código de recuperação."
+                                }
+                                .addOnFailureListener {
+                                    notice = "Não foi possível salvar o código. Confira as regras do Firestore."
+                                }
+                                .addOnCompleteListener { recoveryWorking = false }
+                        }
+                    },
+                    enabled = !recoveryWorking,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (recoveryWorking) "Gerando código…" else "Gerar código de recuperação") }
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider(color = Bg)
                 Spacer(Modifier.height(10.dp))
@@ -507,6 +532,33 @@ private fun ProfileTab(modifier: Modifier) {
             }
         }
     }
+
+    recoveryCodeToShow?.let { code ->
+        AlertDialog(
+            onDismissRequest = { recoveryCodeToShow = null },
+            title = { Text("Seu código de recuperação") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Anote ou salve este código agora. Ele não pode ser visualizado novamente e será necessário se você esquecer sua senha.")
+                    Text(code, color = MainText, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                }
+            },
+            confirmButton = { TextButton(onClick = { recoveryCodeToShow = null }) { Text("Já salvei") } }
+        )
+    }
+}
+
+private fun generateRecoveryCode(): String {
+    val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    val random = java.security.SecureRandom()
+    val raw = buildString { repeat(16) { append(alphabet[random.nextInt(alphabet.length)]) } }
+    return raw.chunked(4).joinToString("-")
+}
+
+private fun hashRecoveryCode(code: String): String {
+    val normalized = code.replace("-", "").trim().uppercase()
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
+    return digest.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 }
 
 @Composable
