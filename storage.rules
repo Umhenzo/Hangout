@@ -6,6 +6,31 @@ service firebase.storage {
       allow read: if request.auth != null;
       allow write: if request.auth != null
         && request.auth.uid == userId
+        && request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /globalPhotos/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /chatPhotos/{chatId}/{userId}/{fileName} {
+      function memberOfChat() {
+        return request.auth != null
+          && firestore.exists(/databases/(default)/documents/privateChats/$(chatId))
+          && firestore.get(/databases/(default)/documents/privateChats/$(chatId)).data.members.hasAny([request.auth.uid]);
+      }
+
+      allow read: if memberOfChat();
+      allow write: if memberOfChat()
+        && request.auth.uid == userId
+        && request.resource != null
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
